@@ -2,11 +2,9 @@
 
 module Main where
 
-import Control.Applicative (liftA2)
 import Control.Lens
   ( Getter
   , Iso'
-  , Traversal
   , (%~)
   , (&)
   , (+~)
@@ -23,11 +21,7 @@ import Data.Bits.Lens (bitAt)
 import Data.Int (Int64)
 import qualified Data.Vector.Storable as V
 import Data.Word (Word8)
-import Graphics.Gloss
-  ( Display(InWindow)
-  , Picture(Color, Pictures, Scale, Text)
-  , white
-  )
+import Graphics.Gloss (Display(InWindow), Picture(Color, Scale, Text), white)
 import Graphics.Gloss.Data.Bitmap
   ( BitmapFormat(..)
   , PixelFormat(..)
@@ -61,6 +55,9 @@ colorVectorToPicture size f =
 playerBit :: Int
 playerBit = 0
 
+goalBit :: Int
+goalBit = 1
+
 emptyField :: Point -> Field
 emptyField s = Field s (V.replicate (s ^. _x * s ^. _y * 4) 0)
 
@@ -81,15 +78,19 @@ toColorVector =
   let processElement :: Int64 -> V.Vector Word8
       processElement e
         | e ^. bitAt playerBit = vGreen
+        | e ^. bitAt goalBit = vRed
         | otherwise = vBlack
    in to (V.concatMap processElement)
 
 initialModel :: Model
 initialModel =
-  let player = Player (V2 100 100) right
+  let player = Player (V2 10 100) right
       field =
         emptyField (V2 300 200) & fieldIx (player ^. playerPos) .
         bitAt playerBit .~
+        True &
+        fieldRect (Rectangle (V2 200 10) (V2 280 180)) .
+        bitAt goalBit .~
         True
    in Model
         { _modelField = field
@@ -157,14 +158,13 @@ main =
         pure (model & modelPlayer . playerDirection %~ rotateDirLeft)
       eventHandler (EventKey (SpecialKey KeyRight) Down _ _) model =
         pure (model & modelPlayer . playerDirection %~ rotateDirRight)
-      eventHandler (EventResize s) model = do
-        putStrLn ("window size " <> show s)
+      eventHandler (EventResize s) model =
         pure (model & modelWindowSize ?~ s ^. from pair)
       eventHandler (EventKey (SpecialKey KeyEsc) Down _ _) _ = exitSuccess
       eventHandler _ model = pure model
       displayMode =
         InWindow
-          "Nice Window"
+          "serpens 1.0"
           (initialModel ^. modelField . fieldSize . pair)
           (10, 10)
    in playIO

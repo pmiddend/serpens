@@ -8,7 +8,14 @@ import Control.Lens
   , Lens'
   , Prism'
   , (&)
+  , Traversal'
+  , Iso
   , (.~)
+  , from
+  , traversed
+  , indices
+  , re
+  , (#)
   , (^.)
   , (^?)
   , (^?!)
@@ -17,9 +24,7 @@ import Control.Lens
   , makeLenses
   , makePrisms
   , prism'
-  , re
   , to
-  , view
   )
 import qualified Data.ByteString as BS
 import Data.Int (Int64)
@@ -54,27 +59,56 @@ fieldWidth = fieldSize . _x
 fieldHeight :: Lens' Field Int
 fieldHeight = fieldSize . _y
 
--- fieldIx :: Point -> Traversal' Field Int64
--- fieldIx (V2 x' y') f field =
---   let x = x' `mod` (field ^. fieldWidth)
---       y = y' `mod` (field ^. fieldHeight)
---       reindexed = (field ^. fieldWidth) * y + x
---    in Field (field ^. fieldSize) <$> ix reindexed f (field ^. fieldVector)
--- Lens' Field Int64
--- Functor f => (Int64 -> f Int64) -> Field -> f Field
-fieldIx :: Point -> Lens' Field Int64
-fieldIx (V2 x' y') f field =
+fromFieldIndex :: Field -> Point -> Int
+fromFieldIndex field (V2 x' y') =
   let x = x' `mod` (field ^. fieldWidth)
       y = y' `mod` (field ^. fieldHeight)
-      reindexed = (field ^. fieldWidth) * y + x
+  in (field ^. fieldWidth * y) + x
+
+toFieldIndex :: Field -> Int -> Point
+toFieldIndex field i =
+  let x = i `mod` (field ^. fieldWidth)
+      y = i `div` (field ^. fieldWidth)
+  in V2 x y
+
+fieldIx :: Point -> Lens' Field Int64
+fieldIx v f field =
+  let vi = fromFieldIndex field v
       helper :: Int64 -> Field
-      helper i = field & fieldVector . ix reindexed .~ i
-      -- f Int64
-      -- f functor, so we have (a -> b) -> f a -> f b
-      -- we have f a, we need (a -> b) to go to f b
-      -- define a function Int64 -> Field
-      -- (the setter!)
-   in helper <$> f (field ^?! fieldVector . ix reindexed)
+      helper i = field & fieldVector . ix vi .~ i
+   in helper <$> f (field ^?! fieldVector . ix vi)
+
+data Rectangle = Rectangle {
+    _rectTopLeft :: Point
+  , _rectBottomRight :: Point
+  } deriving(Eq)
+
+makeLenses ''Rectangle
+
+rectLeft :: Lens' Rectangle Int
+rectLeft = rectTopLeft . _x
+
+rectRight :: Lens' Rectangle Int
+rectRight = rectBottomRight . _x
+
+rectTop :: Lens' Rectangle Int
+rectTop = rectTopLeft . _y
+
+rectBottom :: Lens' Rectangle Int
+rectBottom = rectBottomRight . _y
+
+betweenInclusive :: Ord a => a -> a -> a -> Bool
+betweenInclusive a b x = x >= a && x <= b
+
+pointInRect :: Rectangle -> Point -> Bool
+pointInRect r p = betweenInclusive (r ^. rectLeft) (r ^. rectRight) (p ^. _x) &&
+  betweenInclusive (r ^. rectTop) (r ^. rectBottom) (p ^. _y)
+
+vector :: (V.Storable a, V.Storable b) => Iso [a] [b] (V.Vector a) (V.Vector b)
+vector = iso V.fromList V.toList
+
+fieldRect :: Rectangle -> Traversal' Field Int64
+fieldRect r f field = (fieldVector . from vector . traversed . indices ((r `pointInRect`) . toFieldIndex field)) f field
 
 data Direction1D
   = Negative
@@ -116,7 +150,7 @@ directionPoint :: Prism' Point Direction2D
 directionPoint = prism' toPoint fromPoint
   where
     toPoint :: Direction2D -> Point
-    toPoint (Direction2D v) = view (re directionInt) <$> v
+    toPoint (Direction2D v) = (directionInt #) <$> v
     fromPoint :: Point -> Maybe Direction2D
     fromPoint (V2 x y) =
       Direction2D <$> (V2 <$> (x ^? directionInt) <*> (y ^? directionInt))
