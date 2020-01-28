@@ -1,11 +1,16 @@
 {-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Main where
 
+import System.FilePath((</>))
+import System.Exit(exitFailure, exitSuccess)
+import Serpens.Util(pair)
+import Serpens.BitmapFont(loadBitmapFont, BitmapFont, renderText)
 import Control.Lens
   ( Getter
-  , Iso'
   , (%~)
+  , (#)
   , (&)
   , (+~)
   , (.~)
@@ -13,15 +18,13 @@ import Control.Lens
   , (^.)
   , from
   , has
-  , iso
-  , re
   , to
   )
 import Data.Bits.Lens (bitAt)
 import Data.Int (Int64)
 import qualified Data.Vector.Storable as V
 import Data.Word (Word8)
-import Graphics.Gloss (Display(InWindow), Picture(Color, Scale, Text), white)
+import Graphics.Gloss (Display(InWindow), Picture(Color, Scale, Text), white, red)
 import Graphics.Gloss.Data.Bitmap
   ( BitmapFormat(..)
   , PixelFormat(..)
@@ -37,7 +40,6 @@ import Graphics.Gloss.Interface.IO.Game
   )
 import Linear.V2 (V2(..), _x, _y)
 import Serpens.Types
-import System.Exit (exitSuccess)
 
 mwhen :: Monoid m => Bool -> m -> m
 mwhen True m = m
@@ -89,7 +91,7 @@ initialModel =
         emptyField (V2 300 200) & fieldIx (player ^. playerPos) .
         bitAt playerBit .~
         True &
-        fieldRect (Rectangle (V2 200 10) (V2 280 180)) .
+        fieldRect (mkRect (V2 200 10) (V2 80 100)) .
         bitAt goalBit .~
         True
    in Model
@@ -107,8 +109,8 @@ aspectScale outer inner =
       scaleFactor = fromIntegral relationX
    in V2 scaleFactor scaleFactor
 
-modelToPicture :: Model -> Picture
-modelToPicture m =
+modelToPicture :: BitmapFont -> Model -> Picture
+modelToPicture bmp m =
   case m ^. modelWindowSize of
     Nothing -> mempty
     Just windowSize ->
@@ -125,53 +127,69 @@ modelToPicture m =
           gameoverFont =
             mwhen
               (has (modelGameState . _GameStateGameover) m)
-              (Scale 0.5 0.5 (Color white (Text "GAME OVER")))
-       in levelPicture <> gameoverFont
-
-pair :: Iso' (V2 a) (a, a)
-pair = iso (\(V2 x y) -> (x, y)) (uncurry V2)
+              (Scale 5 5 (Color white (renderText bmp "GAME OVER")))
+          wonFont =
+            mwhen
+              (has (modelGameState . _GameStateWon) m)
+              (Scale 5 5 (Color red (renderText bmp "YOU WON")))
+       in levelPicture <> gameoverFont <> wonFont
 
 worldStep :: Float -> Model -> IO Model
 worldStep _ m =
-  let newPlayer =
-        (m ^. modelPlayer) & playerPos +~
-        (m ^. modelPlayer . playerDirection . re directionPoint)
-      playerHitsSelf =
-        m ^. modelField . fieldIx (newPlayer ^. playerPos) . bitAt playerBit
+  let playerDirection' = m ^. modelPlayer . playerDirection
+      playerMoving = playerDirection' /= noDirection
+      newPlayer =
+        (m ^. modelPlayer) & playerPos +~ (directionPoint # playerDirection')
+      playerValue :: Int64
+      playerValue = m ^. modelField . fieldIx (newPlayer ^. playerPos)
+      playerHitsSelf = playerMoving && playerValue ^. bitAt playerBit
+      playerHitsGoal = playerValue ^. bitAt goalBit
       newModel =
         m & modelPlayer .~ newPlayer & modelField .
         fieldIx (newPlayer ^. playerPos) .
         bitAt playerBit .~
         True
-   in if playerHitsSelf
-        then pure
-               (newModel & modelPlayer . playerDirection .~ noDirection &
-                modelGameState .~
-                GameStateGameover)
-        else pure newModel
+      newDirection dir =
+        if playerHitsSelf || playerHitsGoal
+          then noDirection
+          else dir
+      newGameState state
+        | playerHitsSelf = GameStateGameover
+        | playerHitsGoal = GameStateWon
+        | otherwise = state
+   in pure
+        (newModel & modelPlayer . playerDirection %~ newDirection &
+         modelGameState %~
+         newGameState)
 
 main :: IO ()
-main =
-  let backgroundColor = white
-      stepsPerSecond = 30
-      eventHandler (EventKey (SpecialKey KeyLeft) Down _ _) model =
-        pure (model & modelPlayer . playerDirection %~ rotateDirLeft)
-      eventHandler (EventKey (SpecialKey KeyRight) Down _ _) model =
-        pure (model & modelPlayer . playerDirection %~ rotateDirRight)
-      eventHandler (EventResize s) model =
-        pure (model & modelWindowSize ?~ s ^. from pair)
-      eventHandler (EventKey (SpecialKey KeyEsc) Down _ _) _ = exitSuccess
-      eventHandler _ model = pure model
-      displayMode =
-        InWindow
-          "serpens 1.0"
-          (initialModel ^. modelField . fieldSize . pair)
-          (10, 10)
-   in playIO
-        displayMode
-        backgroundColor
-        stepsPerSecond
-        initialModel
-        (pure . modelToPicture)
-        eventHandler
-        worldStep
+main = do
+  bitmapFont' <- loadBitmapFont ("data" </> "font.png")
+  case bitmapFont' of
+    Left e -> do
+      putStrLn ("error loading font " <> e)
+      exitFailure
+    Right bitmapFont ->
+      let backgroundColor = white
+          stepsPerSecond = 30
+          eventHandler (EventKey (SpecialKey KeyLeft) Down _ _) model =
+            pure (model & modelPlayer . playerDirection %~ rotateDirLeft)
+          eventHandler (EventKey (SpecialKey KeyRight) Down _ _) model =
+            pure (model & modelPlayer . playerDirection %~ rotateDirRight)
+          eventHandler (EventResize s) model =
+            pure (model & modelWindowSize ?~ s ^. from pair)
+          eventHandler (EventKey (SpecialKey KeyEsc) Down _ _) _ = exitSuccess
+          eventHandler _ model = pure model
+          displayMode =
+            InWindow
+            "serpens 1.0"
+            (initialModel ^. modelField . fieldSize . pair)
+            (10, 10)
+        in playIO
+           displayMode
+           backgroundColor
+           stepsPerSecond
+           initialModel
+           (pure . modelToPicture bitmapFont)
+           eventHandler
+           worldStep

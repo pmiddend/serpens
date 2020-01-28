@@ -10,9 +10,12 @@ executable serpens
   main-is:             Main.hs
   other-modules:       Serpens.Types
                      , Serpens.Util
+                     , Serpens.BitmapFont
   build-depends:       base >=4.12 && <4.13
                      , text
                      , gloss
+                     , gloss-juicy
+                     , filepath
                      , bytestring
                      , lens
                      , linear

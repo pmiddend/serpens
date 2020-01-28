@@ -10,6 +10,8 @@ import Control.Lens
   , (&)
   , Traversal'
   , Iso
+  , to
+  , Getter
   , (.~)
   , from
   , traversed
@@ -29,10 +31,11 @@ import Control.Lens
 import qualified Data.ByteString as BS
 import Data.Int (Int64)
 import qualified Data.Vector.Storable as V
+import qualified Graphics.Gloss.Data.Bitmap as Bitmap
 import Data.Vector.Storable.ByteString (byteStringToVector, vectorToByteString)
 import Data.Word (Word8)
 import Linear.V2 (V2(..), _x, _y, perp)
-import Serpens.Util (Endo)
+import Serpens.Util (Endo, pair, betweenInclusive)
 
 type Point = V2 Int
 
@@ -78,27 +81,51 @@ fieldIx v f field =
       helper i = field & fieldVector . ix vi .~ i
    in helper <$> f (field ^?! fieldVector . ix vi)
 
-data Rectangle = Rectangle {
-    _rectTopLeft :: Point
-  , _rectBottomRight :: Point
-  } deriving(Eq)
+-- data Rectangle = Rectangle {
+--     _rectTopLeft :: Point
+--   , _rectBottomRight :: Point
+--   } deriving(Eq)
 
-makeLenses ''Rectangle
+-- makeLenses ''Rectangle
+type Rectangle = Bitmap.Rectangle
 
-rectLeft :: Lens' Rectangle Int
-rectLeft = rectTopLeft . _x
+mkRect :: Point -> Point -> Rectangle
+mkRect pos size = Bitmap.Rectangle {
+  Bitmap.rectPos = pos ^. pair
+  , Bitmap.rectSize = size ^. pair
+                            }
 
-rectRight :: Lens' Rectangle Int
-rectRight = rectBottomRight . _x
+rectPos :: Lens' Rectangle Point
+rectPos f r =
+  let (x, y) = Bitmap.rectPos r
+      changePos :: Rectangle -> Point -> Rectangle
+      changePos _ p = r { Bitmap.rectPos = p ^. pair }
+  in changePos r <$> f (V2 x y)
 
-rectTop :: Lens' Rectangle Int
+rectSize :: Lens' Rectangle Point
+rectSize f r =
+  let (x, y) = Bitmap.rectSize r
+      changeSize :: Rectangle -> Point -> Rectangle
+      changeSize r' p = r' { Bitmap.rectSize = p ^. pair }
+  in changeSize r <$> f (V2 x y)
+
+rectTopLeft :: Getter Rectangle Point
+rectTopLeft = to (\r -> V2 (r ^. rectPos . _x) (r ^. rectPos . _y))
+
+rectBottomRight :: Getter Rectangle Point
+rectBottomRight = to (\r -> V2 (r ^. rectPos . _x + r ^. rectSize . _x) (r ^. rectPos . _y + r ^. rectSize . _y))
+
+rectLeft :: Getter Rectangle Int
+rectLeft = rectPos . _x
+
+rectRight :: Getter Rectangle Int
+rectRight = rectPos . _x
+
+rectTop :: Getter Rectangle Int
 rectTop = rectTopLeft . _y
 
-rectBottom :: Lens' Rectangle Int
+rectBottom :: Getter Rectangle Int
 rectBottom = rectBottomRight . _y
-
-betweenInclusive :: Ord a => a -> a -> a -> Bool
-betweenInclusive a b x = x >= a && x <= b
 
 pointInRect :: Rectangle -> Point -> Bool
 pointInRect r p = betweenInclusive (r ^. rectLeft) (r ^. rectRight) (p ^. _x) &&
@@ -114,11 +141,12 @@ data Direction1D
   = Negative
   | Zero
   | Positive
+  deriving(Eq)
 
 newtype Direction2D =
   Direction2D
     { _getDirection2D :: V2 Direction1D
-    }
+    } deriving(Eq)
 
 makeLenses ''Direction2D
 
@@ -172,6 +200,7 @@ makeLenses ''Player
 data GameState
   = GameStateRunning
   | GameStateGameover
+  | GameStateWon
 
 makePrisms ''GameState
 

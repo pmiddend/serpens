@@ -1,6 +1,6 @@
 { mkDerivation, base, bifunctors, bytestring, bytestring-to-vector
-, cabal-install, containers, gloss, hindent, hlint, lens, linear
-, pretty-simple, stdenv, text, time, vector
+, cabal-install, containers, filepath, gloss, gloss-juicy, hindent
+, hlint, lens, linear, pretty-simple, stdenv, text, time, vector
 }:
 mkDerivation {
   pname = "serpens";
@@ -9,8 +9,8 @@ mkDerivation {
   isLibrary = false;
   isExecutable = true;
   executableHaskellDepends = [
-    base bifunctors bytestring bytestring-to-vector containers gloss
-    lens linear pretty-simple text time vector
+    base bifunctors bytestring bytestring-to-vector containers filepath
+    gloss gloss-juicy lens linear pretty-simple text time vector
   ];
   executableToolDepends = [ cabal-install hindent hlint ];
   description = "A little game featuring a serpens navigating obstacles";
