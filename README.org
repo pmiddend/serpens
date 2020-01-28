@@ -1,5 +1,5 @@
 * serpens
 
-[[https://travis-ci.com/pmiddend/serpens.svg?branch=master][https://travis-ci.com/pmiddend/serpens.svg?branch=master]]
+[[https://github.com/pmiddend/serpens/workflows/Haskell%20CI/badge.svg][https://github.com/pmiddend/serpens/workflows/Haskell%20CI/badge.svg]]
 
 This is just a small game written with [[https://hackage.haskell.org/package/gloss][gloss]] to steer a serpens through a maze. Mainly a sandbox for me to play with.
