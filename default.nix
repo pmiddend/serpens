@@ -6,4 +6,12 @@ let
     sha256 = "0s8gj8b7y1w53ak138f3hw1fvmk40hkpzgww96qrsgf490msk236";
   };
   pkgs = import src {};
-in pkgs.haskellPackages.callPackage ./production.nix {}
+  haskellPackagesAug = pkgs.haskellPackages.override {
+    overrides = self: super: {
+      gloss-rendering = super.gloss-rendering.overrideAttrs (oldAttrs: oldAttrs // {
+        patches = [ ./gloss-image-blend.patch ];
+      });
+    };
+  };
+
+in pkgs.haskellPackagesAug.callPackage ./production.nix {}

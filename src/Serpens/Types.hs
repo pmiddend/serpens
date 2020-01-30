@@ -3,6 +3,7 @@
 
 module Serpens.Types where
 
+import Chronos(Time)
 import Control.Lens
   ( Iso'
   , Lens'
@@ -39,6 +40,7 @@ import qualified Graphics.Gloss.Data.Bitmap as Bitmap
 import Data.Vector.Storable.ByteString (byteStringToVector, vectorToByteString)
 import Data.Word (Word8)
 import Linear.V2 (V2(..), _x, _y, perp)
+import Linear.Vector((*^))
 import Serpens.Util (Endo, pair, betweenInclusive, floatTranslate)
 
 
@@ -70,11 +72,14 @@ instance Monoid SizedPicture where
   mempty = SizedPicture (V2 0 0) mempty
 
 
-scaleSp :: FloatPoint -> Endo SizedPicture
-scaleSp v = over spPicture (Scale (v ^. _x) (v ^. _y)) . over spSize (v *)
+scaled :: FloatPoint -> Endo SizedPicture
+scaled v = over spPicture (Scale (v ^. _x) (v ^. _y)) . over spSize (v *)
 
-colorSp :: Color -> Endo SizedPicture
-colorSp c = over spPicture (Color c)
+uniScaled :: Float -> Endo SizedPicture
+uniScaled v = over spPicture (Scale v v) . over spSize (v *^)
+
+colored :: Color -> Endo SizedPicture
+colored c = over spPicture (Color c)
 
 
 spWidth :: Lens' SizedPicture Float
@@ -83,8 +88,8 @@ spWidth = spSize . _x
 spHeight :: Lens' SizedPicture Float
 spHeight = spSize . _y
 
-besides :: SizedPicture -> SizedPicture -> SizedPicture
-besides a b =
+(|||) :: SizedPicture -> SizedPicture -> SizedPicture
+(|||) a b =
   let newSize :: V2 Float
       newSize =
         V2 (a ^. spWidth + b ^. spWidth) (max (a ^. spHeight) (b ^. spHeight))
@@ -98,11 +103,14 @@ besides a b =
         floatTranslate (V2 rightMove 0) (b ^. spPicture)
    in SizedPicture newSize newPicture
 
-above :: SizedPicture -> SizedPicture -> SizedPicture
-above a b =
+spacer :: FloatPoint -> SizedPicture
+spacer s = SizedPicture s mempty
+
+(===) :: SizedPicture -> SizedPicture -> SizedPicture
+(===) a b =
   let newSize = V2 (max (a ^. spWidth) (b ^. spWidth)) (a ^. spHeight + b ^. spHeight)
-      newA = floatTranslate (V2 0 (-(b ^. spHeight)/2 - (a ^. spHeight)/2)) (a ^. spPicture)
-      newPicture = newA <> (b ^. spPicture) 
+      newA = floatTranslate (V2 0 ((b ^. spHeight)/2 + (a ^. spHeight)/2)) (a ^. spPicture)
+      newPicture = (b ^. spPicture) <> newA
     in SizedPicture newSize newPicture
 
 fromVector :: Iso' ColorVector BS.ByteString
@@ -267,7 +275,9 @@ makePrisms ''GameState
 
 data Model =
   Model
-    { _modelField :: !Field
+    { _modelStart :: !Time
+    , _modelEnd :: Maybe Time
+    , _modelField :: !Field
     , _modelPlayer :: !Player
     , _modelWindowSize :: Maybe IntPoint
     , _modelGameState :: GameState

@@ -1,0 +1,25 @@
+diff --git a/gloss-rendering-1.13.1.1/Graphics/Gloss/Internals/Rendering/Picture.hs b/gloss-rendering-1.13.1.1/Graphics/Gloss/Internals/Rendering/Picture.hs
+index fa6bddd..a6d5a2c 100644
+--- gloss-rendering-1.13.1.1/Graphics/Gloss/Internals/Rendering/Picture.hs
++++ gloss-rendering-1.13.1.1/Graphics/Gloss/Internals/Rendering/Picture.hs
+@@ -221,10 +221,6 @@ drawPicture state circScale picture
+             -- Set current texture
+             GL.textureBinding GL.Texture2D $= Just (texObject tex)
+ 
+-            -- Set to opaque
+-            oldColor <- get GL.currentColor
+-            GL.currentColor $= GL.Color4 1.0 1.0 1.0 1.0
+-
+             -- Draw textured polygon
+             GL.renderPrimitive GL.Polygon $
+               forM_ (bitmapPath (fromIntegral $ fst imgSectionSize)
+@@ -234,9 +230,6 @@ drawPicture state circScale picture
+                 GL.texCoord $ GL.TexCoord2 (gf textureCoordX) (gf textureCoordY)
+                 GL.vertex   $ GL.Vertex2   (gf polygonCoordX) (gf polygonCoordY)
+ 
+-            -- Restore color
+-            GL.currentColor $= oldColor
+-
+             -- Disable texturing
+             GL.texture GL.Texture2D $= GL.Disabled
+ 

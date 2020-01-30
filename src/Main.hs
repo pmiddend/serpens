@@ -1,18 +1,27 @@
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Main where
 
+import Chronos(now, Time, Timespan(getTimespan))
+import Torsor(Torsor(difference))
+import Numeric.Lens(multiplying)
 import System.FilePath((</>))
 import System.Exit(exitFailure, exitSuccess)
-import Serpens.Util(pair, Endo)
-import Serpens.BitmapFont(loadBitmapFont, BitmapFont, renderText)
+import Serpens.Util(pair, Endo, loadBitmapData)
+import Serpens.BitmapFont(loadBitmapFont, BitmapFont, renderText, fontHeight, fontWidth)
+import Data.Text.Lens(packed)
 import Control.Lens
   ( Getter
   , (%~)
   , (#)
+  , non
   , (&)
   , (+~)
+  , Optic'
+  , Const
+  , makeLenses
   , view
   , (.~)
   , (?~)
@@ -25,12 +34,13 @@ import Data.Bits.Lens (bitAt)
 import Data.Int (Int64)
 import qualified Data.Vector.Storable as V
 import Data.Word (Word8)
-import Graphics.Gloss (Display(InWindow), Picture, white, red)
+import Graphics.Gloss (Display(InWindow), Picture(Bitmap), white, red, green)
 import Graphics.Gloss.Data.Bitmap
   ( BitmapFormat(..)
   , PixelFormat(..)
   , RowOrder(..)
   , bitmapOfByteString
+  , bitmapSize
   )
 import Graphics.Gloss.Interface.IO.Game
   ( Event(EventKey, EventResize)
@@ -41,6 +51,14 @@ import Graphics.Gloss.Interface.IO.Game
   )
 import Linear.V2 (V2(..), _x, _y)
 import Serpens.Types
+
+data BaseData = BaseData {
+    _bdFont :: BitmapFont
+  , _bdClockIcon :: SizedPicture
+  , _bdBackpackIcon :: SizedPicture
+  }
+
+makeLenses ''BaseData
 
 mwhen :: Monoid m => Bool -> m -> m
 mwhen True m = m
@@ -98,8 +116,8 @@ slanterPowerupIndices = [V2 0 0, V2 2 0, V2 1 1, V2 0 2, V2 2 2]
 moveIndices :: IntPoint -> Endo [IntPoint]
 moveIndices v ps = (v +) <$> ps
 
-initialModel :: Model
-initialModel =
+initialModel :: Time -> Model
+initialModel startTime =
   let player = Player (V2 10 100) right
       field =
         emptyField (V2 300 200) & fieldIx (player ^. playerPos) .
@@ -109,7 +127,9 @@ initialModel =
         bitAt goalBit .~
         True & fieldIndexList (moveIndices (V2 50 50) slanterPowerupIndices) . bitAt slanterBit .~ True
    in Model
-        { _modelField = field
+        { _modelStart = startTime
+        , _modelEnd = Nothing
+        , _modelField = field
         , _modelPlayer = player
         , _modelWindowSize = Nothing
         , _modelGameState = GameStateRunning
@@ -118,39 +138,59 @@ initialModel =
 aspectScale :: FloatPoint -> FloatPoint -> V2 Float
 aspectScale outer inner =
   let relationX :: Int
-      relationX = round (outer ^. _x) `div` round (inner ^. _x)
+      relationX = if outer ^. _x < outer ^. _y
+                  then round (outer ^. _x) `div` round (inner ^. _x)
+                  else round (outer ^. _y) `div` round (inner ^. _y)
       scaleFactor :: Float
       scaleFactor = fromIntegral relationX
    in V2 scaleFactor scaleFactor
 
-modelToPicture :: BitmapFont -> Model -> Picture
-modelToPicture bmp m =
+fromIntegral' :: Optic' (->) (Const Float) Int Float
+fromIntegral' = to fromIntegral
+
+modelToPicture :: BaseData -> Time -> Model -> Picture
+modelToPicture bd currentTime m =
   case m ^. modelWindowSize of
     Nothing -> mempty
     Just windowSize ->
-      let bitmapSize :: IntPoint
-          bitmapSize = m ^. modelField . fieldSize
+      let bmp = bd ^. bdFont
+          fSize :: IntPoint
+          fSize = m ^. modelField . fieldSize
+          elapsed :: Timespan
+          elapsed = (m ^. modelEnd . non currentTime) `difference` (m ^. modelStart)
+          elapsedSeconds = getTimespan elapsed `div`  1000000000
+          elapsedMinutes = elapsedSeconds `div` 60
+          modSeconds = elapsedSeconds `mod` 60
+          timeString = view packed $ (if elapsedMinutes < 10 then "0" else "") <> show elapsedMinutes <> ":" <> (if modSeconds < 10 then "0" else "") <> show modSeconds
           bitmap :: SizedPicture
           bitmap =
             colorVectorToPicture
-              (fromIntegral <$> bitmapSize)
+              (fromIntegral <$> fSize)
               (m ^. modelField . fieldVector . toColorVector)
+          topSpacing :: Int
+          topSpacing = 4
+          halfSpacer = spacer (V2 (bmp ^. fontWidth . fromIntegral') 0)
+          fullSpacer = spacer (V2 (bmp ^. fontWidth . to fromIntegral . multiplying 2) 0)
+          levelVerticalSpace = (windowSize ^. _y) - (bmp ^. fontHeight * 3) - topSpacing
           scale :: FloatPoint
-          scale = aspectScale (fromIntegral <$> windowSize) (fromIntegral <$> bitmapSize)
-          levelPicture = scaleSp scale bitmap
-          timeCounter = scaleSp (V2 2 2) (colorSp white (renderText bmp "TIME 00:00"))
+          scale = aspectScale (fromIntegral <$> (windowSize & _y .~ levelVerticalSpace)) (fromIntegral <$> fSize)
+          levelPicture = colored white (scaled scale bitmap)
+          timeCounter = uniScaled 1.5 (colored white (bd ^. bdClockIcon)) ||| halfSpacer ||| uniScaled 2 (colored white (renderText bmp timeString))
+          inventory = colored white (bd ^. bdBackpackIcon) ||| halfSpacer ||| uniScaled 2 (colored white (renderText bmp "[empty]"))
+          topLine = timeCounter ||| fullSpacer ||| inventory
           gameoverFont =
             mwhen
               (has (modelGameState . _GameStateGameover) m)
-              (scaleSp (V2 5 5) (colorSp white (renderText bmp "GAME OVER")))
+              (uniScaled 5 (colored white (renderText bmp "GAME OVER")))
           wonFont =
             mwhen
               (has (modelGameState . _GameStateWon) m)
-              (scaleSp (V2 5 5) (colorSp red (renderText bmp "YOU WON")))
-       in view spPicture ((timeCounter `above` levelPicture) `onTop` gameoverFont `onTop` wonFont)
+              (uniScaled 5 (colored red (renderText bmp "YOU WON")))
+       in view spPicture (((topLine === spacer (V2 (fromIntegral topSpacing) 0)) === levelPicture) <> gameoverFont <> wonFont)
 
 worldStep :: Float -> Model -> IO Model
-worldStep _ m =
+worldStep _ m = do
+  currentTime <- now
   let playerDirection' = m ^. modelPlayer . playerDirection
       playerMoving = playerDirection' /= noDirection
       newPlayer =
@@ -172,21 +212,32 @@ worldStep _ m =
         | playerHitsSelf = GameStateGameover
         | playerHitsGoal = GameStateWon
         | otherwise = state
-   in pure
-        (newModel & modelPlayer . playerDirection %~ newDirection &
-         modelGameState %~
-         newGameState)
+      newModelEnd = case (newGameState (m ^. modelGameState), m ^. modelEnd) of
+        (_, Just x) -> Just x
+        (GameStateGameover, Nothing) -> Just currentTime
+        (GameStateWon, Nothing) -> Just currentTime
+        _ -> Nothing
+  pure (newModel & modelPlayer . playerDirection %~ newDirection & modelGameState %~ newGameState & modelEnd .~ newModelEnd)
+
+loadSizedPicture :: FilePath -> IO (Either String SizedPicture)
+loadSizedPicture fp = (makeSizedPicture <$>) <$> loadBitmapData fp
+  where makeSizedPicture bmpData = SizedPicture (fromIntegral <$> (bitmapSize bmpData ^. from pair)) (Bitmap bmpData)
+
 
 main :: IO ()
 main = do
-  bitmapFont' <- loadBitmapFont ("data" </> "font.png")
-  case bitmapFont' of
+  bitmapFont <- loadBitmapFont ("data" </> "font.png")
+  clock <- loadSizedPicture ("data" </> "clock.png")
+  backpack <- loadSizedPicture ("data" </> "backpack.png")
+  now' <- now
+  case BaseData <$> bitmapFont <*> clock <*> backpack of
     Left e -> do
-      putStrLn ("error loading font " <> e)
+      putStrLn ("error loading data " <> e)
       exitFailure
-    Right bitmapFont ->
-      let backgroundColor = white
+    Right baseData ->
+      let backgroundColor = green
           stepsPerSecond = 30
+          model' = initialModel now'
           eventHandler (EventKey (SpecialKey KeyLeft) Down _ _) model =
             pure (model & modelPlayer . playerDirection %~ rotateDirLeft)
           eventHandler (EventKey (SpecialKey KeyRight) Down _ _) model =
@@ -195,12 +246,15 @@ main = do
             pure (model & modelWindowSize ?~ s ^. from pair)
           eventHandler (EventKey (SpecialKey KeyEsc) Down _ _) _ = exitSuccess
           eventHandler _ model = pure model
-          displayMode = InWindow "serpens 1.0" (initialModel ^. modelField . fieldSize . pair) (10, 10)
+          displayMode = InWindow "serpens 1.0" (model' ^. modelField . fieldSize . pair) (10, 10)
+          pictureConverter model = do
+            newNow <- now
+            pure (modelToPicture baseData newNow model)
       in playIO
          displayMode
          backgroundColor
          stepsPerSecond
-         initialModel
-         (pure . modelToPicture bitmapFont)
+         model'
+         pictureConverter
          eventHandler
          worldStep
