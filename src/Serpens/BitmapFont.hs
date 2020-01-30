@@ -2,16 +2,23 @@
 
 module Serpens.BitmapFont where
 
-import Control.Lens (Lens', (^.), (^..), folded, from, makeLenses, to)
+import Control.Lens ((^.), (^..), folded, from, makeLenses, to)
 import Data.Char (ord)
 import Data.Text (Text)
 import Data.Text.Lens (packed)
 import Graphics.Gloss.Data.Bitmap (BitmapData)
 import Graphics.Gloss.Data.Picture (Picture(Bitmap, BitmapSection))
 import Graphics.Gloss.Juicy (loadJuicyPNG)
-import Linear.V2 (V2(V2), _x, _y)
-import Serpens.Types (Point, Rectangle, mkRect, rectSize)
-import Serpens.Util (betweenInclusive, floatTranslate)
+import Linear.V2 (V2(V2), _x)
+import Serpens.Types
+  ( IntPoint
+  , Rectangle
+  , SizedPicture(SizedPicture)
+  , besides
+  , mkRect
+  , rectSize
+  )
+import Serpens.Util (betweenInclusive)
 
 newtype BitmapFont =
   BitmapFont
@@ -20,44 +27,10 @@ newtype BitmapFont =
 
 makeLenses ''BitmapFont
 
-data SizedPicture =
-  SizedPicture
-    { _spPicture :: Picture
-    , _spSize :: Point
-    }
-
-emptySp :: SizedPicture
-emptySp = SizedPicture mempty (V2 0 0)
-
-makeLenses ''SizedPicture
-
-spWidth :: Lens' SizedPicture Int
-spWidth = spSize . _x
-
-spHeight :: Lens' SizedPicture Int
-spHeight = spSize . _y
-
-besides :: SizedPicture -> SizedPicture -> SizedPicture
-besides a b =
-  let newSize' :: V2 Int
-      newSize' =
-        V2 (a ^. spWidth + b ^. spWidth) (max (a ^. spHeight) (b ^. spHeight))
-      newSize :: V2 Float
-      newSize = fromIntegral <$> newSize'
-      newWidth = newSize ^. _x
-      leftMove :: Float
-      leftMove = (-(newWidth / 2) + fromIntegral (a ^. spWidth) / 2)
-      rightMove :: Float
-      rightMove = newWidth / 2 - fromIntegral (b ^. spWidth) / 2
-      newPicture =
-        floatTranslate (V2 leftMove 0) (a ^. spPicture) <>
-        floatTranslate (V2 rightMove 0) (b ^. spPicture)
-   in SizedPicture newPicture newSize'
-
-letterSize :: Point
+letterSize :: IntPoint
 letterSize = V2 12 14
 
-mkLetterRect :: Point -> Rectangle
+mkLetterRect :: IntPoint -> Rectangle
 mkLetterRect x = mkRect x letterSize
 
 letterRect :: Char -> Char -> Int -> Rectangle
@@ -77,7 +50,10 @@ letterToRectangle c
 
 letterToSizedPicture :: BitmapFont -> Char -> Maybe SizedPicture
 letterToSizedPicture font c =
-  (\r -> SizedPicture (BitmapSection r (font ^. bitmapFont)) (r ^. rectSize)) <$>
+  (\r ->
+     SizedPicture
+       (fromIntegral <$> (r ^. rectSize))
+       (BitmapSection r (font ^. bitmapFont))) <$>
   letterToRectangle c
 
 loadBitmapFont :: FilePath -> IO (Either String BitmapFont)
@@ -91,9 +67,9 @@ loadBitmapFont fp = do
          "\": not a bitmap Picture")
     Nothing -> pure (Left "couldn't load image")
 
-renderText :: BitmapFont -> Text -> Picture
+renderText :: BitmapFont -> Text -> SizedPicture
 renderText font text =
   let pictures :: [SizedPicture]
       pictures =
         text ^.. from packed . folded . to (letterToSizedPicture font) . folded
-   in foldr besides emptySp pictures ^. spPicture
+   in foldr besides mempty pictures

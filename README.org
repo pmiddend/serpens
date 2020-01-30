@@ -3,3 +3,9 @@
 [[https://github.com/pmiddend/serpens/workflows/Haskell%20CI/badge.svg][https://github.com/pmiddend/serpens/workflows/Haskell%20CI/badge.svg]]
 
 This is just a small game written with [[https://hackage.haskell.org/package/gloss][gloss]] to steer a serpens through a maze. Mainly a sandbox for me to play with.
+
+* To Do
+
+- Switch from =Picture= to a =Pixure= type that’s probably =IntPoint → PixureElement=, where =IntPoint= signifies the window size.
+  - Can we implement combinators like “besides” and “above” using that approach?
+- Adapt the bitmap font to use Pixure

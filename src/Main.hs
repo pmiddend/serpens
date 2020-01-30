@@ -3,9 +3,10 @@
 
 module Main where
 
+import Debug.Trace(traceShowId)
 import System.FilePath((</>))
 import System.Exit(exitFailure, exitSuccess)
-import Serpens.Util(pair)
+import Serpens.Util(pair, Endo)
 import Serpens.BitmapFont(loadBitmapFont, BitmapFont, renderText)
 import Control.Lens
   ( Getter
@@ -13,6 +14,7 @@ import Control.Lens
   , (#)
   , (&)
   , (+~)
+  , view
   , (.~)
   , (?~)
   , (^.)
@@ -24,7 +26,7 @@ import Data.Bits.Lens (bitAt)
 import Data.Int (Int64)
 import qualified Data.Vector.Storable as V
 import Data.Word (Word8)
-import Graphics.Gloss (Display(InWindow), Picture(Color, Scale, Text), white, red)
+import Graphics.Gloss (Display(InWindow), Picture, white, red, black)
 import Graphics.Gloss.Data.Bitmap
   ( BitmapFormat(..)
   , PixelFormat(..)
@@ -45,8 +47,8 @@ mwhen :: Monoid m => Bool -> m -> m
 mwhen True m = m
 mwhen False _ = mempty
 
-colorVectorToPicture :: Point -> ColorVector -> Picture
-colorVectorToPicture size f =
+colorVectorToPicture :: IntPoint -> ColorVector -> SizedPicture
+colorVectorToPicture size f = SizedPicture (fromIntegral <$> size) $
   bitmapOfByteString
     (size ^. _x)
     (size ^. _y)
@@ -60,7 +62,10 @@ playerBit = 0
 goalBit :: Int
 goalBit = 1
 
-emptyField :: Point -> Field
+slanterBit :: Int
+slanterBit = 2
+
+emptyField :: IntPoint -> Field
 emptyField s = Field s (V.replicate (s ^. _x * s ^. _y * 4) 0)
 
 vWhite :: V.Vector Word8
@@ -75,14 +80,24 @@ vRed = V.fromList [255, 0, 0, 255]
 vGreen :: V.Vector Word8
 vGreen = V.fromList [0, 255, 0, 255]
 
+vBlue :: V.Vector Word8
+vBlue = V.fromList [0, 0, 255, 255]
+
 toColorVector :: Getter FieldVector ColorVector
 toColorVector =
   let processElement :: Int64 -> V.Vector Word8
       processElement e
         | e ^. bitAt playerBit = vGreen
         | e ^. bitAt goalBit = vRed
+        | e ^. bitAt slanterBit = vBlue
         | otherwise = vBlack
    in to (V.concatMap processElement)
+
+slanterPowerupIndices :: [IntPoint]
+slanterPowerupIndices = [V2 0 0, V2 2 0, V2 1 1, V2 0 2, V2 2 2]
+
+moveIndices :: IntPoint -> Endo [IntPoint]
+moveIndices v ps = (v +) <$> ps
 
 initialModel :: Model
 initialModel =
@@ -93,7 +108,7 @@ initialModel =
         True &
         fieldRect (mkRect (V2 200 10) (V2 80 100)) .
         bitAt goalBit .~
-        True
+        True & fieldIndexList (moveIndices (V2 50 50) slanterPowerupIndices) . bitAt slanterBit .~ True
    in Model
         { _modelField = field
         , _modelPlayer = player
@@ -101,10 +116,10 @@ initialModel =
         , _modelGameState = GameStateRunning
         }
 
-aspectScale :: Point -> Point -> V2 Float
+aspectScale :: FloatPoint -> FloatPoint -> V2 Float
 aspectScale outer inner =
   let relationX :: Int
-      relationX = (outer ^. _x) `div` (inner ^. _x)
+      relationX = round (outer ^. _x) `div` round (inner ^. _x)
       scaleFactor :: Float
       scaleFactor = fromIntegral relationX
    in V2 scaleFactor scaleFactor
@@ -114,25 +129,26 @@ modelToPicture bmp m =
   case m ^. modelWindowSize of
     Nothing -> mempty
     Just windowSize ->
-      let bitmapSize :: Point
+      let bitmapSize :: IntPoint
           bitmapSize = m ^. modelField . fieldSize
-          bitmap :: Picture
+          bitmap :: SizedPicture
           bitmap =
             colorVectorToPicture
-              bitmapSize
+              (fromIntegral <$> bitmapSize)
               (m ^. modelField . fieldVector . toColorVector)
-          scale :: V2 Float
-          scale = aspectScale windowSize bitmapSize
-          levelPicture = Scale (scale ^. _x) (scale ^. _y) bitmap
+          scale :: FloatPoint
+          scale = aspectScale (fromIntegral <$> windowSize) (fromIntegral <$> bitmapSize)
+          levelPicture = scaleSp scale bitmap
+          timeCounter = scaleSp (V2 2 2) (colorSp white (renderText bmp "TIME 00:00"))
           gameoverFont =
             mwhen
               (has (modelGameState . _GameStateGameover) m)
-              (Scale 5 5 (Color white (renderText bmp "GAME OVER")))
+              (scaleSp (V2 5 5) (colorSp white (renderText bmp "GAME OVER")))
           wonFont =
             mwhen
               (has (modelGameState . _GameStateWon) m)
-              (Scale 5 5 (Color red (renderText bmp "YOU WON")))
-       in levelPicture <> gameoverFont <> wonFont
+              (scaleSp (V2 5 5) (colorSp red (renderText bmp "YOU WON")))
+       in view spPicture ((timeCounter `above` levelPicture) `onTop` gameoverFont `onTop` wonFont)
 
 worldStep :: Float -> Model -> IO Model
 worldStep _ m =
@@ -180,16 +196,12 @@ main = do
             pure (model & modelWindowSize ?~ s ^. from pair)
           eventHandler (EventKey (SpecialKey KeyEsc) Down _ _) _ = exitSuccess
           eventHandler _ model = pure model
-          displayMode =
-            InWindow
-            "serpens 1.0"
-            (initialModel ^. modelField . fieldSize . pair)
-            (10, 10)
-        in playIO
-           displayMode
-           backgroundColor
-           stepsPerSecond
-           initialModel
-           (pure . modelToPicture bitmapFont)
-           eventHandler
-           worldStep
+          displayMode = InWindow "serpens 1.0" (initialModel ^. modelField . fieldSize . pair) (10, 10)
+      in playIO
+         displayMode
+         backgroundColor
+         stepsPerSecond
+         initialModel
+         (pure . modelToPicture bitmapFont)
+         eventHandler
+         worldStep
