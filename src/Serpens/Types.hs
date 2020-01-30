@@ -3,8 +3,6 @@
 
 module Serpens.Types where
 
-import Debug.Trace(traceShowId)
-import Graphics.Gloss.Juicy (loadJuicyPNG)
 import Control.Lens
   ( Iso'
   , Lens'
@@ -35,15 +33,13 @@ import Control.Lens
 import qualified Data.ByteString as BS
 import Data.Int (Int64)
 import qualified Data.Vector.Storable as V
-import Graphics.Gloss.Data.Picture (Picture(Color, Scale, BitmapSection, Bitmap, Translate))
+import Graphics.Gloss.Data.Picture (Picture(Color, Scale))
 import Graphics.Gloss.Data.Color (Color)
 import qualified Graphics.Gloss.Data.Bitmap as Bitmap
 import Data.Vector.Storable.ByteString (byteStringToVector, vectorToByteString)
 import Data.Word (Word8)
 import Linear.V2 (V2(..), _x, _y, perp)
-import Linear.Vector((^/))
 import Serpens.Util (Endo, pair, betweenInclusive, floatTranslate)
-import Graphics.Gloss.Data.Bitmap (BitmapData)
 
 
 type IntPoint = V2 Int
@@ -105,7 +101,7 @@ besides a b =
 above :: SizedPicture -> SizedPicture -> SizedPicture
 above a b =
   let newSize = V2 (max (a ^. spWidth) (b ^. spWidth)) (a ^. spHeight + b ^. spHeight)
-      newA = floatTranslate (traceShowId (V2 0 (-(b ^. spHeight)/2 - (a ^. spHeight)/2))) (a ^. spPicture)
+      newA = floatTranslate (V2 0 (-(b ^. spHeight)/2 - (a ^. spHeight)/2)) (a ^. spPicture)
       newPicture = newA <> (b ^. spPicture) 
     in SizedPicture newSize newPicture
 

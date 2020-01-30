@@ -3,7 +3,6 @@
 
 module Main where
 
-import Debug.Trace(traceShowId)
 import System.FilePath((</>))
 import System.Exit(exitFailure, exitSuccess)
 import Serpens.Util(pair, Endo)
@@ -26,7 +25,7 @@ import Data.Bits.Lens (bitAt)
 import Data.Int (Int64)
 import qualified Data.Vector.Storable as V
 import Data.Word (Word8)
-import Graphics.Gloss (Display(InWindow), Picture, white, red, black)
+import Graphics.Gloss (Display(InWindow), Picture, white, red)
 import Graphics.Gloss.Data.Bitmap
   ( BitmapFormat(..)
   , PixelFormat(..)
